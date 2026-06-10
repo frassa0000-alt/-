@@ -1,0 +1,213 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    // Document ID: userId (Firebase Auth UID)
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - displayName: string (required, max 100)
+    //   - email: string (required, email format)
+    //   - photoURL: string (optional, URL format)
+    //   - role: string (required, enum: ["user", "admin", "owner", "lieutenant", "download_rank", "helper"])
+    //   - createdAt: timestamp (optional)
+    //
+    // Collection: /games/{gameId}
+    // Document ID: gameId
+    // Fields:
+    //   - title: map (required, {ar: string, en: string})
+    //   - description: map (required, {ar: string, en: string})
+    //   - category: string (required)
+    //   - platform: string (required, enum: ["PC", "Mobile", "Console", "Web"])
+    //   - version: string (required)
+    //   - downloads: number (optional)
+    //   - rating: number (optional)
+    //   - imageUrl: string (required)
+    //   - bannerUrl: string (optional)
+    //   - author: string (required)
+    //   - tags: list (optional)
+    //   - isFeatured: bool (optional)
+    //   - isTrending: bool (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: /games/{gameId}/comments/{commentId}
+    // Document ID: commentId
+    // Fields:
+    //   - id: string (required, immutable)
+    //   - gameId: string (required, immutable)
+    //   - userId: string (required, immutable)
+    //   - username: string (required, min 3, max 50)
+    //   - text: string (required, min 1, max 500)
+    //   - createdAt: timestamp (optional)
+    //
+    // Collection: /bans/{banId}
+    // Document ID: banId
+    // Fields:
+    //   - id: string (required, immutable)
+    //   - userId: string (required, immutable)
+    //   - message: string (optional, max 500)
+    //   - status: string (required, enum: ["pending_review", "banned", "unbanned", "timeout"])
+    //   - expiry: timestamp (optional)
+    //   - timestamp: timestamp (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (request.auth.token.email == "frassa0000@gmail.com") ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'owner', 'lieutenant', 'download_rank'])
+        );
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'role']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.role in ['user', 'admin', 'owner', 'lieutenant', 'download_rank', 'helper'] &&
+             (data.role in ['admin', 'owner', 'lieutenant', 'download_rank'] ? (request.auth.token.email == "frassa0000@gmail.com" || isAdmin()) : true);
+    }
+
+    function isValidGame(data) {
+      return hasRequiredFields(['title', 'description', 'category', 'platform', 'version', 'imageUrl', 'author', 'createdAt']) &&
+             data.title is map && data.title.ar is string && data.title.en is string &&
+             data.description is map && data.description.ar is string && data.description.en is string &&
+             data.platform in ["PC", "Mobile", "Console", "Web"] &&
+             data.version is string &&
+             data.imageUrl is string &&
+             data.author is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidComment(data) {
+      return hasRequiredFields(['userId', 'text']) &&
+             data.userId == request.auth.uid &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 500;
+    }
+
+    function isValidWarning(data) {
+      return hasRequiredFields(['id', 'userId', 'message', 'read']) &&
+             data.id is string &&
+             data.userId is string &&
+             data.message is string &&
+             data.read is bool;
+    }
+
+    function isValidBan(data) {
+      return hasRequiredFields(['id', 'userId', 'status']) &&
+             data.status in ["pending_review", "banned", "unbanned", "timeout"];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // User Profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && 
+                      hasRequiredFields(['uid', 'email', 'role']) &&
+                      request.resource.data.uid == request.auth.uid &&
+                      request.resource.data.role == 'user';
+      allow create: if isAdmin() && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) &&
+                      request.resource.data.role == resource.data.role; // Prevent self-promotion
+      allow update: if isAdmin(); // Admin can update any user
+
+      // Warnings subcollection
+      match /warnings/{warningId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, delete: if isAdmin();
+        allow update: if isAdmin() || (isOwner(userId) && 
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) &&
+                        request.resource.data.read == true);
+      }
+    }
+
+    // Games
+    match /games/{gameId} {
+      allow read: if true; // Publicly readable
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+      
+      // Allow specific updates like rating or downloads if needed (currently handled by isAdmin)
+      // If public updates are needed for specific fields, they should be added here with validation.
+
+      // Comments subcollection
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isAuthenticated() && isValidComment(request.resource.data);
+        allow update: if isAdmin() || (isOwner(resource.data.userId) && isValidComment(request.resource.data));
+        allow delete: if isAdmin() || isOwner(resource.data.userId);
+      }
+    }
+
+    // Settings (Warning Message, etc.)
+    match /settings/{settingId} {
+      allow read: if true; // Publicly readable so users can see the warning
+      allow write: if isAdmin(); // Only admin can update settings
+    }
+
+    // Bans
+    match /bans/{banId} {
+      allow read: if isAuthenticated() && (isAdmin() || banId == request.auth.uid);
+      allow create, update: if (isAuthenticated() && request.resource.data.userId == request.auth.uid && request.resource.data.status == 'timeout') || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Reports
+    match /reports/{reportId} {
+      allow read, list: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // Admin Applications
+    match /admin_applications/{appId} {
+      allow read, list: if isAdmin() || (isAuthenticated() && (resource.data.userId == request.auth.uid || request.query.limit == 1));
+      allow create: if true; // Allow anyone to apply (including guests)
+      allow update, delete: if isAdmin();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

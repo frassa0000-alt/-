@@ -1,0 +1,122 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique identifier for the user." },
+        "username": { "type": "string", "description": "The user's chosen display name." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "avatar": { "type": "string", "description": "The URL of the user's avatar image." },
+        "role": { "type": "string", "enum": ["user", "admin"], "description": "The user's role in the system." },
+        "favorites": { "type": "array", "items": { "type": "string" }, "description": "A list of mod IDs that the user has favorited." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the user account was created." }
+      },
+      "required": ["uid", "username", "email", "role"]
+    },
+    "Game": {
+      "title": "Game",
+      "description": "A game available for download.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique identifier for the game." },
+        "title": {
+          "type": "object",
+          "properties": {
+            "ar": { "type": "string" },
+            "en": { "type": "string" }
+          },
+          "required": ["ar", "en"]
+        },
+        "description": {
+          "type": "object",
+          "properties": {
+            "ar": { "type": "string" },
+            "en": { "type": "string" }
+          },
+          "required": ["ar", "en"]
+        },
+        "category": { "type": "string", "description": "The category the game belongs to." },
+        "platform": { "type": "string", "enum": ["PC", "Mobile", "Console", "Web"], "description": "The platform the game is for." },
+        "version": { "type": "string", "description": "The current version of the game." },
+        "downloads": { "type": "integer", "description": "The total number of downloads." },
+        "rating": { "type": "number", "description": "The average rating of the game." },
+        "imageUrl": { "type": "string", "description": "The URL of the game's preview image." },
+        "bannerUrl": { "type": "string", "description": "The URL of the game's banner image." },
+        "fileUrl": { "type": "string", "description": "The URL where the game file can be downloaded." },
+        "fileSize": { "type": "string", "description": "The size of the game file." },
+        "author": { "type": "string", "description": "The author of the game." },
+        "tags": { "type": "array", "items": { "type": "string" }, "description": "A list of tags for the game." },
+        "isFeatured": { "type": "boolean", "description": "Whether the game is featured." },
+        "isTrending": { "type": "boolean", "description": "Whether the game is trending." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the game was added." }
+      },
+      "required": ["title", "description", "category", "platform", "version"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A user comment on a mod.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique identifier for the comment." },
+        "modId": { "type": "string", "description": "The ID of the mod being commented on." },
+        "userId": { "type": "string", "description": "The ID of the user who made the comment." },
+        "username": { "type": "string", "description": "The username of the commenter." },
+        "text": { "type": "string", "description": "The content of the comment." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the comment was posted." }
+      },
+      "required": ["id", "modId", "userId", "text"]
+    },
+    "Ban": {
+      "title": "Ban",
+      "description": "A record of a banned user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique identifier for the ban record." },
+        "userId": { "type": "string", "description": "The ID of the banned user." },
+        "message": { "type": "string", "description": "The reason for the ban." },
+        "status": { "type": "string", "enum": ["pending_review", "banned", "unbanned", "timeout"], "description": "The current status of the ban." },
+        "expiry": { "type": "integer", "description": "The timestamp when the ban/timeout expires." },
+        "timestamp": { "type": "integer", "description": "When the ban was issued." }
+      },
+      "required": ["id", "userId", "status"]
+    },
+    "Warning": {
+      "title": "Warning",
+      "description": "A warning sent to a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "message"]
+    },
+    "SupportTicket": {
+      "title": "SupportTicket",
+      "description": "A voice support ticket created by a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "audioUrl": { "type": "string", "description": "Base64 encoded audio or storage URL." },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "adminResponse": { "type": "string", "description": "The text response from the admin." },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "audioUrl", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles." },
+    "/users/{userId}/warnings/{warningId}": { "schema": "Warning", "description": "Warnings sent to users." },
+    "/games/{gameId}": { "schema": "Game", "description": "Game titles." },
+    "/games/{gameId}/comments/{commentId}": { "schema": "Comment", "description": "Comments on games." },
+    "/bans/{banId}": { "schema": "Ban", "description": "Ban records." },
+    "/support_tickets/{ticketId}": { "schema": "SupportTicket", "description": "Voice support tickets." }
+  }
+}
